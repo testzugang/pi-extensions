@@ -1274,6 +1274,87 @@ git status --short`,
     });
   });
 
+  describe("tool_call event - regex-based pattern matching", () => {
+    it("permits exact matches with regex", async () => {
+      const { toolCallHandler } = setup({
+        configFile: JSON.stringify({ allowed: ["r:git status"] }),
+      });
+      const result = await toolCallHandler!(
+        bashEvent("git status"),
+        makeCtx().ctx,
+      );
+
+      expect(result).toBeUndefined();
+    });
+
+    it("anchors the regex fully on both sides to prevent partial match bypasses", async () => {
+      const { toolCallHandler } = setup({
+        configFile: JSON.stringify({ allowed: ["r:git status"] }),
+      });
+      const result = await toolCallHandler!(
+        bashEvent("git status --short"),
+        makeCtx({ hasUI: false }).ctx,
+      );
+
+      expect(result).toMatchObject({ block: true });
+    });
+
+    it("prevents command injection bypasses like rm -rf / && git status", async () => {
+      const { toolCallHandler } = setup({
+        configFile: JSON.stringify({ allowed: ["r:git status"] }),
+      });
+      const result = await toolCallHandler!(
+        bashEvent("rm -rf / && git status"),
+        makeCtx({ hasUI: false }).ctx,
+      );
+
+      expect(result).toMatchObject({ block: true });
+    });
+
+    it("supports alternation OR groups securely with enclosing anchors", async () => {
+      const { toolCallHandler } = setup({
+        configFile: JSON.stringify({ allowed: ["r:git status|ls -la"] }),
+      });
+
+      expect(
+        await toolCallHandler!(bashEvent("git status"), makeCtx().ctx),
+      ).toBeUndefined();
+      expect(
+        await toolCallHandler!(bashEvent("ls -la"), makeCtx().ctx),
+      ).toBeUndefined();
+
+      expect(
+        await toolCallHandler!(
+          bashEvent("git status --short"),
+          makeCtx({ hasUI: false }).ctx,
+        ),
+      ).toMatchObject({ block: true });
+    });
+
+    it("preserves trailing escapes correctly", async () => {
+      const { toolCallHandler } = setup({
+        configFile: JSON.stringify({ allowed: [String.raw`r:echo \$`] }),
+      });
+      const result = await toolCallHandler!(bashEvent("echo $"), makeCtx().ctx);
+
+      expect(result).toBeUndefined();
+    });
+
+    it("catches malformed regex syntax errors and triggers TUI warning on interactive contexts", async () => {
+      const { toolCallHandler } = setup({
+        configFile: JSON.stringify({ allowed: ["r:git status[a-z"] }),
+      });
+      const { ctx, notify } = makeCtx({ hasUI: true });
+      const result = await toolCallHandler!(bashEvent("git status"), ctx);
+
+      expect(result).toMatchObject({ block: true });
+      expect(notify).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid regex pattern in .bash-approval"),
+        "warning",
+      );
+    });
+  });
+
   describe("extension registration", () => {
     it("registers the expected commands and tool_call hook", () => {
       const { commands, toolCallHandler } = setup();

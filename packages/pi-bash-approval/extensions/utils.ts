@@ -176,12 +176,30 @@ function matchesPrefixGlob(command: string, pattern: string): boolean {
   return command === prefix || command.startsWith(`${prefix} `);
 }
 
-function matchesPattern(command: string, pattern: string): boolean {
+export function matchesPattern(
+  command: string,
+  pattern: string,
+  onError?: (err: Error) => void,
+): boolean {
   const trimmedCommand = command.trim();
   const trimmedPattern = pattern.trim();
 
   if (!trimmedPattern) {
     return false;
+  }
+
+  if (trimmedPattern.startsWith("r:")) {
+    const patternSource = trimmedPattern.slice(2).trim();
+    const finalEnclosedSource = `^(?:${patternSource})$`;
+    try {
+      const regex = new RegExp(finalEnclosedSource);
+      return regex.test(trimmedCommand);
+    } catch (err) {
+      if (onError && err instanceof Error) {
+        onError(err);
+      }
+      return false;
+    }
   }
 
   if (trimmedPattern.endsWith(":*")) {
@@ -912,10 +930,12 @@ function suggestPrefixPattern(tokens: readonly string[]): string | null {
 function firstFailingSegment(
   segments: readonly string[],
   rules: readonly string[],
+  onError?: (err: Error) => void,
 ): string | null {
   return (
     segments.find(
-      (segment) => !rules.some((rule) => matchesPattern(segment, rule)),
+      (segment) =>
+        !rules.some((rule) => matchesPattern(segment, rule, onError)),
     ) ?? null
   );
 }
@@ -923,6 +943,7 @@ function firstFailingSegment(
 export function evaluateCommand(
   command: string,
   config: BashApprovalConfig,
+  onError?: (err: Error) => void,
 ): CommandEvaluation {
   const trimmedCommand = command.trim();
   const rawSegments = config.splitChains
@@ -936,7 +957,7 @@ export function evaluateCommand(
     return { allMatch: true };
   }
 
-  const failingSegment = firstFailingSegment(segments, config.allowed);
+  const failingSegment = firstFailingSegment(segments, config.allowed, onError);
 
   if (!failingSegment) {
     return { allMatch: true };

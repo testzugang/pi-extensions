@@ -55,7 +55,14 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    const evaluation = evaluateCommand(command, config);
+    const evaluation = evaluateCommand(command, config, (err) => {
+      if (ctx.hasUI) {
+        ctx.ui.notify(
+          `Invalid regex pattern in .bash-approval: ${err.message}`,
+          "warning",
+        );
+      }
+    });
 
     if (evaluation.allMatch) {
       return;
