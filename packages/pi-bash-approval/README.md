@@ -66,6 +66,10 @@ match. Use sparingly.
 
 Prefixing a pattern with `r:` allows full regular expressions. For security, every regex is automatically wrapped inside `^(?:<regex>)$` at runtime to prevent unanchored OR-bypasses or command injection.
 
+If an existing literal rule happens to start with `r:` (matching that exact
+string, not a regex), escape it with a leading backslash — `\r:foo` — to keep
+matching it as a literal/glob pattern instead of a regex.
+
 ### `splitChains`
 
 Default `true`: split incoming commands on shell separators (`&&`, `||`, `;`,

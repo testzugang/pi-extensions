@@ -157,6 +157,7 @@ function loadAllowList(): string[] {
 }
 
 export function loadConfig(): BashApprovalConfig {
+  compiledPatternCache.clear();
   const splitChains = loadSplitChainsSetting();
   const allowed = loadAllowList();
 
@@ -176,30 +177,52 @@ function matchesPrefixGlob(command: string, pattern: string): boolean {
   return command === prefix || command.startsWith(`${prefix} `);
 }
 
-export function matchesPattern(
+const compiledPatternCache = new Map<string, RegExp | null>();
+
+function compileRegexPattern(
+  trimmedPattern: string,
+  onError?: (err: Error) => void,
+): RegExp | null {
+  const cached = compiledPatternCache.get(trimmedPattern);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const patternSource = trimmedPattern.slice(2).trim();
+  const finalEnclosedSource = `^(?:${patternSource})$`;
+
+  try {
+    const regex = new RegExp(finalEnclosedSource);
+    compiledPatternCache.set(trimmedPattern, regex);
+    return regex;
+  } catch (err) {
+    compiledPatternCache.set(trimmedPattern, null);
+    if (onError && err instanceof Error) {
+      onError(err);
+    }
+    return null;
+  }
+}
+
+function matchesPattern(
   command: string,
   pattern: string,
   onError?: (err: Error) => void,
 ): boolean {
   const trimmedCommand = command.trim();
-  const trimmedPattern = pattern.trim();
+  let trimmedPattern = pattern.trim();
 
   if (!trimmedPattern) {
     return false;
   }
 
-  if (trimmedPattern.startsWith("r:")) {
-    const patternSource = trimmedPattern.slice(2).trim();
-    const finalEnclosedSource = `^(?:${patternSource})$`;
-    try {
-      const regex = new RegExp(finalEnclosedSource);
-      return regex.test(trimmedCommand);
-    } catch (err) {
-      if (onError && err instanceof Error) {
-        onError(err);
-      }
-      return false;
-    }
+  if (trimmedPattern.startsWith("\\r:")) {
+    trimmedPattern = trimmedPattern.slice(1);
+  } else if (trimmedPattern.startsWith("r:")) {
+    const regex = compileRegexPattern(trimmedPattern, onError);
+
+    return regex ? regex.test(trimmedCommand) : false;
   }
 
   if (trimmedPattern.endsWith(":*")) {

@@ -1353,6 +1353,27 @@ git status --short`,
         "warning",
       );
     });
+
+    it("warns only once per invalid regex rule even with multiple chain segments", async () => {
+      const { toolCallHandler } = setup({
+        configFile: JSON.stringify({ allowed: ["r:git status[a-z"] }),
+      });
+      const { ctx, notify } = makeCtx({ hasUI: true });
+      const result = await toolCallHandler!(bashEvent("ls && ls && ls"), ctx);
+
+      expect(result).toMatchObject({ block: true });
+      expect(notify).toHaveBeenCalledTimes(1);
+    });
+
+    it("matches a literal rule starting with 'r:' when escaped with a backslash", async () => {
+      const { toolCallHandler } = setup({
+        configFile: JSON.stringify({ allowed: [String.raw`\r:foo`] }),
+      });
+
+      expect(
+        await toolCallHandler!(bashEvent("r:foo"), makeCtx().ctx),
+      ).toBeUndefined();
+    });
   });
 
   describe("extension registration", () => {
