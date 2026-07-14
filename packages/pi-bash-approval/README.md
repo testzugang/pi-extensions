@@ -50,16 +50,21 @@ Blank lines and `#` comment lines are ignored.
 
 ### Pattern syntax (`.bash-approval` lines)
 
-| Pattern        | Matches                                            |
-| -------------- | -------------------------------------------------- |
-| `ls`           | exact: `ls` only                                   |
-| `ls:*`         | `ls` exactly, or `ls <anything>` (space-separated) |
-| `git status:*` | `git status` exactly, or `git status <anything>`   |
-| `git*`         | trailing-`*` glob: any command starting with `git` |
+| Pattern        | Matches                                                |
+| -------------- | ------------------------------------------------------ |
+| `ls`           | exact: `ls` only                                       |
+| `ls:*`         | `ls` exactly, or `ls <anything>` (space-separated)     |
+| `git status:*` | `git status` exactly, or `git status <anything>`       |
+| `git*`         | trailing-`*` glob: any command starting with `git`     |
+| `r:<regex>`    | regular expression: command matched against `<regex>`. |
 
 `:*` form is recommended: requires exact match or trailing space, so
 `git status:*` does **not** match `git statusfoo`. Bare `*` form is raw prefix
 match. Use sparingly.
+
+#### Regex patterns (`r:`)
+
+Prefixing a pattern with `r:` allows full regular expressions. For security, every regex is automatically wrapped inside `^(?:<regex>)$` at runtime to prevent unanchored OR-bypasses or command injection.
 
 ### `splitChains`
 
