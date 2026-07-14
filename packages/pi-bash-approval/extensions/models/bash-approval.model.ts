@@ -19,7 +19,7 @@ export type SplitState = {
   quote: '"' | "'" | null;
 };
 
-export type NotifyLevel = "info" | "error";
+export type NotifyLevel = "info" | "error" | "warning";
 
 export type ApprovalCtx = {
   readonly hasUI: boolean;
