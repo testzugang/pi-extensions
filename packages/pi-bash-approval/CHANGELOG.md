@@ -1,5 +1,17 @@
 # @fgladisch/pi-bash-approval
 
+## 0.2.8
+
+### Patch Changes
+
+- [`d2ce9a9`](https://github.com/fgladisch/pi-extensions/commit/d2ce9a91d0f554f49a0676521c914a4d66e21741) Thanks [@fgladisch](https://github.com/fgladisch)! - Treat background `&` and grouping parentheses as shell syntax during bash approval splitting so grouped dev-server commands suggest clean allow-list rules.
+
+## 0.2.7
+
+### Patch Changes
+
+- [#37](https://github.com/fgladisch/pi-extensions/pull/37) [`6c18825`](https://github.com/fgladisch/pi-extensions/commit/6c18825f2ee194817c9be03cd24ef4181b06b4cd) Thanks [@testzugang](https://github.com/testzugang)! - Add inter-extension lifecycle events for remote prompt and bash approval mirroring with first-response-wins callbacks.
+
 ## 0.2.6
 
 - Ignore heredoc bodies during bash approval command splitting so literal commit message content is not suggested as an allow-list command.
