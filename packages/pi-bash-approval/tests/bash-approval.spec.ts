@@ -1966,6 +1966,117 @@ git status --short`,
       expect(result).toBeUndefined();
       expect(receivedOptions).toContain("Allow once");
     });
+
+    it("opens a custom regex input pre-filled with the scoped recommendation on ctrl+r", async () => {
+      const { toolCallHandler, fs } = setup({ configFile: '{"allowed":[]}' });
+      const inputMock = jest
+        .fn<any>()
+        .mockResolvedValue("r:^git -C (?:\"[^\"]+\"|'[^']+'|\\S+) status$");
+      const notifyMock = jest.fn();
+
+      const ctx = {
+        hasUI: true,
+        ui: {
+          custom: jest.fn<any>().mockResolvedValue("__ctrl_r__"),
+          input: inputMock,
+          notify: notifyMock,
+          theme: { fg: (c: string, t: string) => t, bold: (t: string) => t },
+        },
+      };
+
+      const result = await toolCallHandler!(
+        bashEvent("git -C /tmp/foo status"),
+        ctx as any,
+      );
+      expect(result).toBeUndefined();
+      expect(inputMock).toHaveBeenCalledWith(
+        "Verbesserte/Eigene Regex eingeben:",
+        expect.stringContaining("status$"),
+      );
+      expect(fs.appendFileSync).toHaveBeenCalledWith(
+        ALLOW_LIST_PATH,
+        "r:^git -C (?:\"[^\"]+\"|'[^']+'|\\S+) status$\n",
+        "utf8",
+      );
+    });
+
+    it("automatically prepends r: prefix if omitted by user", async () => {
+      const { toolCallHandler, fs } = setup({ configFile: '{"allowed":[]}' });
+      const inputMock = jest.fn<any>().mockResolvedValue("^git status$");
+
+      const ctx = {
+        hasUI: true,
+        ui: {
+          custom: jest.fn<any>().mockResolvedValue("__ctrl_r__"),
+          input: inputMock,
+          notify: jest.fn(),
+          theme: { fg: (c: string, t: string) => t, bold: (t: string) => t },
+        },
+      };
+
+      await toolCallHandler!(bashEvent("git status"), ctx as any);
+      expect(fs.appendFileSync).toHaveBeenCalledWith(
+        ALLOW_LIST_PATH,
+        "r:^git status$\n",
+        "utf8",
+      );
+    });
+
+    it("guards against compiling invalid regex and restarts the dialog loop", async () => {
+      const { toolCallHandler, fs } = setup({ configFile: '{"allowed":[]}' });
+      const inputMock = jest
+        .fn<any>()
+        .mockResolvedValueOnce("r:^git [a-z$") // Invalid
+        .mockResolvedValueOnce(null); // Cancel/Escape
+
+      const notifyMock = jest.fn();
+      const customMock = jest
+        .fn<any>()
+        .mockResolvedValueOnce("__ctrl_r__") // First call triggers ctrl+r
+        .mockResolvedValueOnce("__ctrl_r__") // Loop back triggers ctrl+r
+        .mockResolvedValueOnce("Deny"); // Fallback end
+
+      const ctx = {
+        hasUI: true,
+        ui: {
+          custom: customMock,
+          input: inputMock,
+          notify: notifyMock,
+          theme: { fg: (c: string, t: string) => t, bold: (t: string) => t },
+        },
+      };
+
+      const result = await toolCallHandler!(
+        bashEvent("git status"),
+        ctx as any,
+      );
+      expect(result).toMatchObject({ block: true });
+      expect(notifyMock).toHaveBeenCalledWith(
+        expect.stringContaining("Ungültige Regex:"),
+        "error",
+      );
+      expect(fs.appendFileSync).not.toHaveBeenCalled();
+    });
+
+    it("prevents writing duplicate rules to allow-list", async () => {
+      const { toolCallHandler, fs } = setup({
+        configFile: JSON.stringify({ allowed: ["r:^git status$"] }),
+      });
+      const inputMock = jest.fn<any>().mockResolvedValue("r:^git status$");
+
+      const ctx = {
+        hasUI: true,
+        ui: {
+          custom: jest.fn<any>().mockResolvedValue("__ctrl_r__"),
+          input: inputMock,
+          notify: jest.fn(),
+          theme: { fg: (c: string, t: string) => t, bold: (t: string) => t },
+        },
+      };
+
+      await toolCallHandler!(bashEvent("git status"), ctx as any);
+      expect(fs.appendFileSync).not.toHaveBeenCalled();
+    });
   });
 
   describe("extension registration", () => {

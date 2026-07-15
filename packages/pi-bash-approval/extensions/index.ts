@@ -28,12 +28,15 @@ import type {
   RespondResult,
 } from "./models";
 import {
+  ALLOW_LIST_PATH,
   applyChoice,
   BLOCKED_BY_USER,
   buildPromptOptions,
   DENY,
   evaluateCommand,
   loadConfig,
+  persistRule,
+  suggestRegexPattern,
 } from "./utils";
 
 const PLUGIN_NAME = "pi-bash-approval";
@@ -195,16 +198,91 @@ export default function (pi: ExtensionAPI) {
     try {
       emitSafe(pi, "pi-bash-approval:request", requestEvent);
 
+      const resolveLocalLoop = async (): Promise<BashDecision | null> => {
+        let loopDialog = true;
+        let localDecision: BashDecision | null = null;
+
+        while (loopDialog && !controller.isSettled()) {
+          localDecision = await resolveLocalDecision(
+            prompt.options,
+            prompt.rulesByOption,
+            ctx,
+            command,
+            failingSegment,
+            controller.isSettled,
+            localPromptAbort.signal,
+          );
+
+          if (
+            localDecision &&
+            localDecision.decision.action === "allow_always" &&
+            localDecision.decision.rule === "__ctrl_r__"
+          ) {
+            // Regex Custom Input Mode
+            const recommended = suggestRegexPattern(command);
+            const inputRegex = await ctx.ui.input(
+              "Verbesserte/Eigene Regex eingeben:",
+              recommended,
+            );
+
+            if (
+              inputRegex === null ||
+              inputRegex === undefined ||
+              inputRegex.trim() === ""
+            ) {
+              // Escape/Cancel: Loop zurück zum Select-Dialog
+              continue;
+            }
+
+            let customRegex = inputRegex.trim();
+            if (!customRegex.startsWith("r:")) {
+              customRegex = `r:${customRegex}`;
+            }
+
+            try {
+              // Validierung mittels new RegExp auf den reinen Regex-Körper (ohne r:)
+              const regexBody = customRegex.slice(2).trim();
+              new RegExp(regexBody);
+
+              // Persistierung über die zentrale persistRule Utility-Funktion
+              const persistResult = persistRule(config, customRegex, ctx);
+
+              if (persistResult.success) {
+                const rulePersistedEvent: BashApprovalRulePersistedEvent = {
+                  plugin: PLUGIN_NAME,
+                  requestId: requestBase.requestId,
+                  toolCallId,
+                  rule: customRegex,
+                  path: ALLOW_LIST_PATH,
+                  success: true,
+                  createdAt: new Date().toISOString(),
+                };
+                emitSafe(
+                  pi,
+                  "pi-bash-approval:rule_persisted",
+                  rulePersistedEvent,
+                );
+              }
+
+              localDecision = {
+                selectedBy: "local",
+                decision: { action: "allow_always", rule: customRegex },
+                choice: customRegex,
+              };
+              loopDialog = false;
+            } catch (err: any) {
+              ctx.ui.notify(`Ungültige Regex: ${err.message}`, "error");
+              continue;
+            }
+          } else {
+            loopDialog = false;
+          }
+        }
+        return localDecision;
+      };
+
       if (!controller.isSettled()) {
-        void resolveLocalDecision(
-          prompt.options,
-          prompt.rulesByOption,
-          ctx,
-          command,
-          failingSegment,
-          controller.isSettled,
-          localPromptAbort.signal,
-        ).then(
+        void resolveLocalLoop().then(
           (decision) => {
             if (decision) {
               controller.accept(decision);
