@@ -10,6 +10,8 @@ import { describe, expect, it, jest } from "@jest/globals";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { suggestRegexPattern } from "../extensions/utils";
+
 // `virtual: true` because @earendil-works/pi-coding-agent is ESM-only — Jest's
 // CJS resolver can't load it, but we're replacing it with a stub anyway.
 jest.mock(
@@ -1456,6 +1458,37 @@ git status --short`,
       expect(
         await toolCallHandler!(bashEvent("r:foo"), makeCtx().ctx),
       ).toBeUndefined();
+    });
+
+    it("suggests a correct regex-based pattern for git with directory-scoping", () => {
+      expect(suggestRegexPattern("git -C /tmp/example status --short")).toBe(
+        "r:^git -C (?:\"[^\"]+\"|'[^']+'|\\S+) status --short$",
+      );
+      expect(
+        suggestRegexPattern('git -C "/tmp/some folder" status --short'),
+      ).toBe("r:^git -C (?:\"[^\"]+\"|'[^']+'|\\S+) status --short$");
+    });
+
+    it("suggests a correct regex-based pattern for npm with directory-scoping", () => {
+      expect(
+        suggestRegexPattern("npm --prefix '/workspace/my app' run build"),
+      ).toBe("r:^npm --prefix (?:\"[^\"]+\"|'[^']+'|\\S+) run build$");
+    });
+
+    it("suggests a correct regex-based pattern for docker exec with container-scoping", () => {
+      expect(
+        suggestRegexPattern("docker exec -it --user root my_container ls -la"),
+      ).toBe(
+        "r:^docker exec -it --user root (?:\"[^\"]+\"|'[^']+'|\\S+) ls -la$",
+      );
+      expect(
+        suggestRegexPattern("docker exec -w /app container-123 npm install"),
+      ).toBe("r:^docker exec -w /app (?:\"[^\"]+\"|'[^']+'|\\S+) npm install$");
+    });
+
+    it("suggests an exact escaped regex match as fallback for any other command", () => {
+      expect(suggestRegexPattern("ls -la")).toBe("r:^ls -la$");
+      expect(suggestRegexPattern("git status")).toBe("r:^git status$");
     });
   });
 

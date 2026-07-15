@@ -1075,7 +1075,7 @@ export function buildPromptOptions(
   return { options, rulesByOption };
 }
 
-function persistRule(
+export function persistRule(
   config: BashApprovalConfig,
   rule: string,
   ctx: ApprovalCtx,
@@ -1113,4 +1113,140 @@ export function applyChoice(
   }
 
   return persistRule(config, rule, ctx);
+}
+
+const DOCKER_FLAGS_WITH_ARGS = new Set([
+  "-u",
+  "--user",
+  "-w",
+  "--workdir",
+  "-e",
+  "--env",
+  "--cpus",
+  "-m",
+  "--memory",
+  "--network",
+  "--platform",
+]);
+const PATH_PATTERN = "(?:\"[^\"]+\"|'[^']+'|\\S+)";
+
+type TokenWithIndices = {
+  readonly value: string;
+  readonly raw: string;
+  readonly start: number;
+  readonly end: number;
+};
+
+export function tokenize(command: string): string[] {
+  const regex = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|(\S+)/g;
+  const tokens: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(command)) !== null) {
+    tokens.push(match.at(1) ?? match.at(2) ?? match.at(3) ?? "");
+  }
+
+  return tokens;
+}
+
+export function tokenizeWithIndices(command: string): TokenWithIndices[] {
+  const regex = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|(\S+)/g;
+  const tokens: TokenWithIndices[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(command)) !== null) {
+    const raw = match.at(0) ?? "";
+    const value = match.at(1) ?? match.at(2) ?? match.at(3) ?? "";
+    const start = match.index;
+    const end = regex.lastIndex;
+    tokens.push({ value, raw, start, end });
+  }
+
+  return tokens;
+}
+
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function suggestScopedPattern(
+  command: string,
+  scopedToken: TokenWithIndices,
+): string {
+  const before = command.slice(0, scopedToken.start);
+  const after = command.slice(scopedToken.end);
+
+  return `r:^${escapeRegExp(before)}${PATH_PATTERN}${escapeRegExp(after)}$`;
+}
+
+export function suggestRegexPattern(command: string): string {
+  const firstLine = command.trim().split("\n").at(0) ?? "";
+
+  if (!firstLine) {
+    return "r:^$";
+  }
+
+  const tokens = tokenizeWithIndices(firstLine);
+
+  if (tokens.length === 0) {
+    return "r:^$";
+  }
+
+  if (
+    tokens.length >= 4 &&
+    tokens.at(0)?.value === "git" &&
+    tokens.at(1)?.value === "-C"
+  ) {
+    const dirToken = tokens.at(2);
+
+    if (dirToken) {
+      return suggestScopedPattern(firstLine, dirToken);
+    }
+  }
+
+  if (
+    tokens.length >= 4 &&
+    tokens.at(0)?.value === "npm" &&
+    tokens.at(1)?.value === "--prefix"
+  ) {
+    const dirToken = tokens.at(2);
+
+    if (dirToken) {
+      return suggestScopedPattern(firstLine, dirToken);
+    }
+  }
+
+  if (
+    tokens.length >= 3 &&
+    tokens.at(0)?.value === "docker" &&
+    tokens.at(1)?.value === "exec"
+  ) {
+    let containerToken: TokenWithIndices | null = null;
+
+    for (let tokenIndex = 2; tokenIndex < tokens.length; tokenIndex += 1) {
+      const token = tokens.at(tokenIndex);
+
+      if (!token) {
+        continue;
+      }
+
+      if (DOCKER_FLAGS_WITH_ARGS.has(token.value)) {
+        tokenIndex += 1;
+        continue;
+      }
+
+      if (token.value.startsWith("-")) {
+        continue;
+      }
+
+      containerToken = token;
+      break;
+    }
+
+    if (containerToken) {
+      return suggestScopedPattern(firstLine, containerToken);
+    }
+  }
+
+  return `r:^${escapeRegExp(firstLine)}$`;
 }
