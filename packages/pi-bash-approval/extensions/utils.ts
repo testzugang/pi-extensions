@@ -1084,11 +1084,10 @@ export function persistRule(
     return { rule, path: ALLOW_LIST_PATH, success: true };
   }
 
-  config.allowed.push(rule);
-
   try {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
     fs.appendFileSync(ALLOW_LIST_PATH, `${rule}\n`, "utf8");
+    config.allowed.push(rule);
     ctx.ui.notify(`Added rule: ${rule}`, "info");
 
     return { rule, path: ALLOW_LIST_PATH, success: true };
@@ -1193,7 +1192,7 @@ export function suggestRegexPattern(command: string): string {
   }
 
   if (
-    tokens.length >= 4 &&
+    tokens.length >= 3 &&
     tokens.at(0)?.value === "git" &&
     tokens.at(1)?.value === "-C"
   ) {
@@ -1205,7 +1204,7 @@ export function suggestRegexPattern(command: string): string {
   }
 
   if (
-    tokens.length >= 4 &&
+    tokens.length >= 3 &&
     tokens.at(0)?.value === "npm" &&
     tokens.at(1)?.value === "--prefix"
   ) {

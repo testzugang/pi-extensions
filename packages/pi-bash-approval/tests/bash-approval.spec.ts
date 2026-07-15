@@ -7,10 +7,16 @@
  */
 
 import { describe, expect, it, jest } from "@jest/globals";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { suggestRegexPattern } from "../extensions/utils";
+import {
+  persistRule,
+  suggestRegexPattern,
+  tokenize,
+  tokenizeWithIndices,
+} from "../extensions/utils";
 
 // `virtual: true` because @earendil-works/pi-coding-agent is ESM-only — Jest's
 // CJS resolver can't load it, but we're replacing it with a stub anyway.
@@ -1489,6 +1495,48 @@ git status --short`,
     it("suggests an exact escaped regex match as fallback for any other command", () => {
       expect(suggestRegexPattern("ls -la")).toBe("r:^ls -la$");
       expect(suggestRegexPattern("git status")).toBe("r:^git status$");
+    });
+
+    it("tokenize and tokenizeWithIndices work correctly with quotes", () => {
+      expect(tokenize("git -C '/tmp/some folder' status")).toEqual([
+        "git",
+        "-C",
+        "/tmp/some folder",
+        "status",
+      ]);
+      const tokens = tokenizeWithIndices('git -C "/tmp/some folder" status');
+      expect(tokens.map((t) => t.value)).toEqual([
+        "git",
+        "-C",
+        "/tmp/some folder",
+        "status",
+      ]);
+    });
+
+    it("suggests a correct regex-based pattern for git/npm with exactly 3 tokens", () => {
+      expect(suggestRegexPattern("git -C /tmp/example")).toBe(
+        "r:^git -C (?:\"[^\"]+\"|'[^']+'|\\S+)$",
+      );
+      expect(suggestRegexPattern("npm --prefix '/workspace/my app'")).toBe(
+        "r:^npm --prefix (?:\"[^\"]+\"|'[^']+'|\\S+)$",
+      );
+    });
+
+    it("suggests exact escaped regex for multiline fallbacks based on first line", () => {
+      expect(suggestRegexPattern("ls -la\nrm -rf /")).toBe("r:^ls -la$");
+    });
+
+    it("does not mutate in-memory allowed config when persistRule fails", () => {
+      const config = { allowed: ["ls"], splitChains: true };
+      const { ctx } = makeCtx();
+      (fs.appendFileSync as jest.Mock).mockImplementationOnce(() => {
+        throw new Error("Disk Full");
+      });
+
+      const res = persistRule(config, "r:^git status$", ctx);
+      expect(res.success).toBe(false);
+      expect(config.allowed).not.toContain("r:^git status$");
+      expect(config.allowed).toEqual(["ls"]);
     });
   });
 
