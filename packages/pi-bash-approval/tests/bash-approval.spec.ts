@@ -1513,12 +1513,35 @@ git status --short`,
       ]);
     });
 
+    it("tokenizeWithIndices returns raw, start, end, and handles escaped quotes and mixed quoting", () => {
+      const tokens = tokenizeWithIndices(
+        'git -C "/tmp/some \\" folder" status',
+      );
+      expect(tokens).toEqual([
+        { value: "git", raw: "git", start: 0, end: 3 },
+        { value: "-C", raw: "-C", start: 4, end: 6 },
+        {
+          value: '/tmp/some \\" folder',
+          raw: '"/tmp/some \\" folder"',
+          start: 7,
+          end: 28,
+        },
+        { value: "status", raw: "status", start: 29, end: 35 },
+      ]);
+    });
+
     it("suggests a correct regex-based pattern for git/npm with exactly 3 tokens", () => {
       expect(suggestRegexPattern("git -C /tmp/example")).toBe(
         "r:^git -C (?:\"[^\"]+\"|'[^']+'|\\S+)$",
       );
       expect(suggestRegexPattern("npm --prefix '/workspace/my app'")).toBe(
         "r:^npm --prefix (?:\"[^\"]+\"|'[^']+'|\\S+)$",
+      );
+    });
+
+    it("suggests a correct regex-based pattern for docker exec with exactly 3 tokens", () => {
+      expect(suggestRegexPattern("docker exec -it my_container")).toBe(
+        "r:^docker exec -it (?:\"[^\"]+\"|'[^']+'|\\S+)$",
       );
     });
 
