@@ -1,5 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import {
+  DynamicBorder,
+  isToolCallEventType,
+} from "@earendil-works/pi-coding-agent";
+import {
+  Container,
+  matchesKey,
+  SelectList,
+  Text,
+} from "@earendil-works/pi-tui";
 import { randomUUID } from "node:crypto";
 import type {
   BashApprovalAllowedEvent,
@@ -190,13 +199,11 @@ export default function (pi: ExtensionAPI) {
         void resolveLocalDecision(
           prompt.options,
           prompt.rulesByOption,
-          (message, selectOptions) =>
-            ctx.ui.select(message, selectOptions, {
-              signal: localPromptAbort.signal,
-            }),
+          ctx,
           command,
           failingSegment,
           controller.isSettled,
+          localPromptAbort.signal,
         ).then(
           (decision) => {
             if (decision) {
@@ -349,21 +356,110 @@ function buildEventOptions(
 async function resolveLocalDecision(
   promptOptions: readonly string[],
   rulesByOption: Record<string, string>,
-  select: (
-    message: string,
-    options: string[],
-  ) => Promise<string | null | undefined>,
+  ctx: {
+    readonly ui: {
+      readonly custom: (factory: any, options?: any) => Promise<any>;
+    };
+  },
   command: string,
   failingSegment: string,
   isAlreadyResolved: () => boolean,
+  signal?: AbortSignal,
 ): Promise<BashDecision | null> {
-  const choice = await select(
-    `Bash command not on allow-list:\n\n${command}\n\nFirst failing segment: ${failingSegment}`,
-    [...promptOptions],
-  );
+  const items = promptOptions.map((opt) => ({ value: opt, label: opt }));
+
+  const choice = (await ctx.ui.custom(
+    (
+      tui: { readonly requestRender: () => void },
+      theme: {
+        readonly fg: (color: string, text: string) => string;
+        readonly bg: (color: string, text: string) => string;
+        readonly bold: (text: string) => string;
+      },
+      _kb: unknown,
+      done: (val: string | null) => void,
+    ) => {
+      const container = new Container();
+
+      // Top Border
+      container.addChild(
+        new DynamicBorder((s: string) => theme.fg("accent", s)),
+      );
+
+      // Header
+      container.addChild(
+        new Text(
+          theme.fg("accent", theme.bold("Bash command not on allow-list:\n")) +
+            theme.fg("text", command),
+          1,
+          0,
+        ),
+      );
+      container.addChild(
+        new Text(
+          theme.fg("warning", `First failing segment: `) +
+            theme.fg("text", failingSegment),
+          1,
+          0,
+        ),
+      );
+
+      // SelectList
+      const selectList = new SelectList(items, Math.min(items.length, 10), {
+        selectedPrefix: (t: string) => theme.fg("accent", t),
+        selectedText: (t: string) => theme.fg("accent", t),
+        description: (t: string) => theme.fg("muted", t),
+        scrollInfo: (t: string) => theme.fg("dim", t),
+        noMatch: (t: string) => theme.fg("warning", t),
+      });
+      selectList.onSelect = (item: { readonly value: string }) =>
+        done(item.value);
+      selectList.onCancel = () => done(null);
+      container.addChild(selectList);
+
+      // Help Text
+      container.addChild(
+        new Text(
+          theme.fg(
+            "dim",
+            "↑↓ navigate • enter select • ctrl+r enter regex • esc cancel",
+          ),
+          1,
+          0,
+        ),
+      );
+
+      // Bottom Border
+      container.addChild(
+        new DynamicBorder((s: string) => theme.fg("accent", s)),
+      );
+
+      return {
+        render: (w: number) => container.render(w),
+        invalidate: () => container.invalidate(),
+        handleInput: (data: string) => {
+          if (matchesKey(data, "ctrl+r")) {
+            done("__ctrl_r__");
+          } else {
+            selectList.handleInput(data);
+            tui.requestRender();
+          }
+        },
+      };
+    },
+    { signal },
+  )) as string | null;
 
   if (isAlreadyResolved()) {
     return null;
+  }
+
+  if (choice === "__ctrl_r__") {
+    return {
+      selectedBy: "local",
+      decision: { action: "allow_always", rule: "__ctrl_r__" },
+      choice: "__ctrl_r__",
+    };
   }
 
   if (!choice || choice === DENY) {

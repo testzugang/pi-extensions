@@ -22,10 +22,42 @@ import {
 // CJS resolver can't load it, but we're replacing it with a stub anyway.
 jest.mock(
   "@earendil-works/pi-coding-agent",
-  () => ({
-    isToolCallEventType: (toolName: string, event: { toolName: string }) =>
-      event.toolName === toolName,
-  }),
+  () => {
+    class DynamicBorder {}
+    return {
+      isToolCallEventType: (toolName: string, event: { toolName: string }) =>
+        event.toolName === toolName,
+      DynamicBorder,
+    };
+  },
+  { virtual: true },
+);
+
+let mockLastSelectListItems: any[] = [];
+
+jest.mock(
+  "@earendil-works/pi-tui",
+  () => {
+    class Container {
+      addChild = jest.fn();
+      render = jest.fn().mockReturnValue([]);
+      invalidate = jest.fn();
+    }
+    class SelectList {
+      constructor(items: any[]) {
+        mockLastSelectListItems = items;
+      }
+    }
+    class Text {
+      constructor(public text: string) {}
+    }
+    return {
+      Container,
+      SelectList,
+      Text,
+      matchesKey: (data: string, key: string) => data === key,
+    };
+  },
   { virtual: true },
 );
 
@@ -123,13 +155,47 @@ function makeCtx(
     .mockImplementation((_msg, options, dialogOpts) =>
       Promise.resolve(opts.pick ? opts.pick(options, dialogOpts) : null),
     );
+  /* eslint-disable @typescript-eslint/no-unsafe-return */
+  const custom = jest
+    .fn<
+      (factory: any, customOpts?: any) => Promise<string | null | undefined>
+    >()
+    .mockImplementation(async (factory: any, customOpts?: any) => {
+      const tui = { requestRender: jest.fn() };
+      const theme = {
+        fg: (c: string, t: string) => t,
+        bg: (c: string, t: string) => t,
+        bold: (t: string) => t,
+      };
+      const kb = {};
+      const done = (value: any) => Promise.resolve(value);
+      factory(tui, theme, kb, done);
+      const options = mockLastSelectListItems.map((item) => item.value);
+      // Fallback if SelectList wasn't instantiated or list is empty
+      const finalOptions =
+        options.length > 0 ? options : ["Allow once", "Deny"];
+      const dialogOpts = { signal: customOpts?.signal };
+
+      const choice = opts.pick ? opts.pick(finalOptions, dialogOpts) : null;
+
+      // Push to select.mock.calls directly to track the call without invoking opts.pick a second time
+      select.mock.calls.push([
+        "custom-ui-placeholder",
+        finalOptions,
+        dialogOpts,
+      ]);
+
+      const resolvedChoice = await choice;
+      return resolvedChoice;
+    });
+  /* eslint-enable @typescript-eslint/no-unsafe-return */
   const ctx = {
     cwd: opts.cwd ?? "/repo",
     hasUI: opts.hasUI ?? true,
-    ui: { notify, select },
+    ui: { notify, select, custom },
   };
 
-  return { ctx, notify, select };
+  return { ctx, notify, select, custom };
 }
 
 const CONFIG_DIR = path.join(os.homedir(), ".pi", "agent");
@@ -1882,6 +1948,23 @@ git status --short`,
           ({ name }) => name === "pi-bash-approval:allowed",
         ),
       ).toMatchObject({ data: { mode: "allow_always", selectedBy: "remote" } });
+    });
+  });
+
+  describe("TUI Prompt - custom select dialog and ctrl+r", () => {
+    it("handles selection using SelectList and intercepts ctrl+r keypress", async () => {
+      const { toolCallHandler } = setup({ configFile: '{"allowed":[]}' });
+      let receivedOptions: string[] = [];
+      const { ctx } = makeCtx({
+        pick: (options) => {
+          receivedOptions = options;
+          return "Allow once";
+        },
+      });
+
+      const result = await toolCallHandler!(bashEvent("whoami"), ctx);
+      expect(result).toBeUndefined();
+      expect(receivedOptions).toContain("Allow once");
     });
   });
 
