@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -1248,4 +1249,24 @@ export function suggestRegexPattern(command: string): string {
   }
 
   return `r:^${escapeRegExp(firstLine)}$`;
+}
+
+export function copyToClipboard(text: string): void {
+  try {
+    if (process.platform === "darwin") {
+      const proc = spawn("pbcopy");
+      proc.stdin.write(text);
+      proc.stdin.end();
+    } else if (process.platform === "win32") {
+      const proc = spawn("clip");
+      proc.stdin.write(text);
+      proc.stdin.end();
+    } else {
+      const proc = spawn("xclip", ["-selection", "clipboard"]);
+      proc.stdin.write(text);
+      proc.stdin.end();
+    }
+  } catch {
+    // Silent fail if clipboard utilities are missing
+  }
 }

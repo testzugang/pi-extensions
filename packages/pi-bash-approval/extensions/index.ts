@@ -32,6 +32,7 @@ import {
   applyChoice,
   BLOCKED_BY_USER,
   buildPromptOptions,
+  copyToClipboard,
   DENY,
   evaluateCommand,
   loadConfig,
@@ -219,11 +220,11 @@ export default function (pi: ExtensionAPI) {
             localDecision.decision.rule === "__ctrl_r__"
           ) {
             // Regex Custom Input Mode
+            copyToClipboard(command);
+
+            const promptMsg = `Originaler Befehl:\n  ${command}\n\n(Befehl wurde in die Zwischenablage kopiert!)\n\nVerbesserte/Eigene Regex eingeben:`;
             const recommended = suggestRegexPattern(command);
-            const inputRegex = await ctx.ui.input(
-              "Verbesserte/Eigene Regex eingeben:",
-              recommended,
-            );
+            const inputRegex = await ctx.ui.input(promptMsg, recommended);
 
             if (
               inputRegex === null ||

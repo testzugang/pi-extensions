@@ -1990,7 +1990,7 @@ git status --short`,
       );
       expect(result).toBeUndefined();
       expect(inputMock).toHaveBeenCalledWith(
-        "Verbesserte/Eigene Regex eingeben:",
+        expect.stringContaining("Originaler Befehl:"),
         expect.stringContaining("status$"),
       );
       expect(fs.appendFileSync).toHaveBeenCalledWith(
