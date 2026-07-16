@@ -1128,7 +1128,7 @@ const DOCKER_FLAGS_WITH_ARGS = new Set([
   "--network",
   "--platform",
 ]);
-const PATH_PATTERN = "(?:\"[^\"]+\"|'[^']+'|\\S+)";
+const PATH_PATTERN = "(?:\"[^\"$\\x60]+\"|'[^']+'|[^\\s$\\x60]+)";
 
 type TokenWithIndices = {
   readonly value: string;

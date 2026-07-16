@@ -223,7 +223,7 @@ export default function (pi: ExtensionAPI) {
             copyToClipboard(command);
 
             const promptMsg = `Originaler Befehl:\n  ${command}\n\n(Befehl wurde in die Zwischenablage kopiert!)\n\nVerbesserte/Eigene Regex eingeben:`;
-            const recommended = suggestRegexPattern(command);
+            const recommended = suggestRegexPattern(failingSegment);
             const inputRegex = await ctx.ui.input(promptMsg, recommended);
 
             if (

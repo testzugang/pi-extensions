@@ -1534,33 +1534,56 @@ git status --short`,
 
     it("suggests a correct regex-based pattern for git with directory-scoping", () => {
       expect(suggestRegexPattern("git -C /tmp/example status --short")).toBe(
-        "r:^git -C (?:\"[^\"]+\"|'[^']+'|\\S+) status --short$",
+        "r:^git -C (?:\"[^\"$\\x60]+\"|'[^']+'|[^\\s$\\x60]+) status --short$",
       );
       expect(
         suggestRegexPattern('git -C "/tmp/some folder" status --short'),
-      ).toBe("r:^git -C (?:\"[^\"]+\"|'[^']+'|\\S+) status --short$");
+      ).toBe(
+        "r:^git -C (?:\"[^\"$\\x60]+\"|'[^']+'|[^\\s$\\x60]+) status --short$",
+      );
     });
 
     it("suggests a correct regex-based pattern for npm with directory-scoping", () => {
       expect(
         suggestRegexPattern("npm --prefix '/workspace/my app' run build"),
-      ).toBe("r:^npm --prefix (?:\"[^\"]+\"|'[^']+'|\\S+) run build$");
+      ).toBe(
+        "r:^npm --prefix (?:\"[^\"$\\x60]+\"|'[^']+'|[^\\s$\\x60]+) run build$",
+      );
     });
 
     it("suggests a correct regex-based pattern for docker exec with container-scoping", () => {
       expect(
         suggestRegexPattern("docker exec -it --user root my_container ls -la"),
       ).toBe(
-        "r:^docker exec -it --user root (?:\"[^\"]+\"|'[^']+'|\\S+) ls -la$",
+        "r:^docker exec -it --user root (?:\"[^\"$\\x60]+\"|'[^']+'|[^\\s$\\x60]+) ls -la$",
       );
       expect(
         suggestRegexPattern("docker exec -w /app container-123 npm install"),
-      ).toBe("r:^docker exec -w /app (?:\"[^\"]+\"|'[^']+'|\\S+) npm install$");
+      ).toBe(
+        "r:^docker exec -w /app (?:\"[^\"$\\x60]+\"|'[^']+'|[^\\s$\\x60]+) npm install$",
+      );
     });
 
     it("suggests an exact escaped regex match as fallback for any other command", () => {
       expect(suggestRegexPattern("ls -la")).toBe("r:^ls -la$");
       expect(suggestRegexPattern("git status")).toBe("r:^git status$");
+    });
+
+    it("safeguards against command injection in scoping suggestions by rejecting $, backticks, or unquoted spaces", () => {
+      const pattern = suggestRegexPattern("git -C /tmp/example status");
+      const regexStr = pattern.slice(2);
+      const regex = new RegExp(regexStr);
+
+      // Safe paths must match:
+      expect(regex.test("git -C /tmp/example status")).toBe(true);
+      expect(regex.test("git -C '/tmp/my folder' status")).toBe(true);
+      expect(regex.test('git -C "/tmp/my folder" status')).toBe(true);
+
+      // Unsafe paths with Command Substitution ($ or `) must NOT match:
+      expect(regex.test("git -C $(touch${IFS}/tmp/evil) status")).toBe(false);
+      expect(regex.test("git -C `touch${IFS}/tmp/evil` status")).toBe(false);
+      expect(regex.test('git -C "/tmp/$(touch /tmp/evil)" status')).toBe(false);
+      expect(regex.test('git -C "/tmp/`touch /tmp/evil`" status')).toBe(false);
     });
 
     it("tokenize and tokenizeWithIndices work correctly with quotes", () => {
@@ -1598,16 +1621,16 @@ git status --short`,
 
     it("suggests a correct regex-based pattern for git/npm with exactly 3 tokens", () => {
       expect(suggestRegexPattern("git -C /tmp/example")).toBe(
-        "r:^git -C (?:\"[^\"]+\"|'[^']+'|\\S+)$",
+        "r:^git -C (?:\"[^\"$\\x60]+\"|'[^']+'|[^\\s$\\x60]+)$",
       );
       expect(suggestRegexPattern("npm --prefix '/workspace/my app'")).toBe(
-        "r:^npm --prefix (?:\"[^\"]+\"|'[^']+'|\\S+)$",
+        "r:^npm --prefix (?:\"[^\"$\\x60]+\"|'[^']+'|[^\\s$\\x60]+)$",
       );
     });
 
     it("suggests a correct regex-based pattern for docker exec with exactly 3 tokens", () => {
       expect(suggestRegexPattern("docker exec -it my_container")).toBe(
-        "r:^docker exec -it (?:\"[^\"]+\"|'[^']+'|\\S+)$",
+        "r:^docker exec -it (?:\"[^\"$\\x60]+\"|'[^']+'|[^\\s$\\x60]+)$",
       );
     });
 
